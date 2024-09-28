@@ -1,0 +1,3 @@
+Main-Class: Main
+Class-Path: lib/java/dpuareu.jar lib/java/commons-codec-1.15.jar lib/java/json-20230618.jar
+
