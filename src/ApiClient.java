@@ -1,5 +1,3 @@
-// src/ApiClient.java
-
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
@@ -13,12 +11,10 @@ public class ApiClient {
      * @return true if the image was sent successfully, false otherwise.
      */
     public static boolean sendImage(String base64Image) {
-        String apiEndpoint = "localhost:8000"; // Replace with your API URL
         try {
             // Use URI to construct URL to avoid deprecated constructor
-            URI uri = new URI("http", "your-api-endpoint.com", null, null);
+            URI uri = new URI("http", null, "localhost", 8000, "/api/fingerprint", null, null);
             URL url = uri.toURL();
-
             HttpURLConnection conn = (HttpURLConnection) url.openConnection();
             conn.setDoOutput(true);
             conn.setRequestMethod("POST");
@@ -26,12 +22,13 @@ public class ApiClient {
 
             // Create JSON payload
             String jsonInputString = "{\"image\":\"" + base64Image + "\"}";
-
+            
             try(OutputStream os = conn.getOutputStream()) {
                 byte[] input = jsonInputString.getBytes("utf-8");
                 os.write(input, 0, input.length);           
             }
 
+            // System.out.println(conn.getResponseMessage());
             int responseCode = conn.getResponseCode();
             if(responseCode == HttpURLConnection.HTTP_OK || responseCode == HttpURLConnection.HTTP_CREATED){
                 return true;
