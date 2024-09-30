@@ -33,6 +33,7 @@ Mirakas.jar: $(BIN_DIR) $(SRC_DIR)/*.java manifest.txt
 clean:
 	rm -rf $(BIN_DIR)
 	rm -f Mirakas.jar
+	rm -rf ./fingerprints
 
 run:
 	LD_LIBRARY_PATH=./lib/x64 java -cp "Mirakas.jar:./lib/java/*" Main

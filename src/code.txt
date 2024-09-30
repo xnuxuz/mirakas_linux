@@ -1,0 +1,462 @@
+// src/Main.java
+
+import com.digitalpersona.uareu.UareUGlobal;
+import com.digitalpersona.uareu.ReaderCollection;
+import com.digitalpersona.uareu.Reader;
+import com.digitalpersona.uareu.UareUException;
+
+import java.util.Scanner;
+import java.util.logging.Logger;
+import java.util.logging.Level;
+
+public class Main {
+    private static final Logger logger = Logger.getLogger(Main.class.getName());
+    private static Reader selectedReader;
+
+    public static void main(String[] args) {
+        try {
+            // Initialize the UareU SDK
+            ReaderCollection readers = UareUGlobal.GetReaderCollection();
+            readers.GetReaders();
+
+            if (readers.size() == 0) {
+                logger.warning("No fingerprint readers found.");
+                return;
+            }
+
+            // Display the list of available readers
+            System.out.println("Available Fingerprint Readers:");
+            for (int i = 0; i < readers.size(); i++) {
+                Reader reader = readers.get(i);
+                System.out.println((i + 1) + ". " + reader.GetDescription().name);
+            }
+
+            // Prompt user to select a reader
+            Scanner scanner = new Scanner(System.in);
+
+            System.out.print("Select a reader by number: ");
+            int choice = scanner.nextInt();
+
+            if (choice < 1 || choice > readers.size()) {
+                System.out.println("Invalid selection.");
+                return;
+            }
+
+            selectedReader = readers.get(choice - 1);
+            selectedReader.Open(Reader.Priority.EXCLUSIVE);
+
+            // Start fingerprint capture
+            Capture.Run(selectedReader, false);
+
+        } catch (UareUException e) {
+            logger.log(Level.SEVERE, "UareUException occurred", e);
+        } catch (Exception e) {
+            logger.log(Level.SEVERE, "An unexpected error occurred", e);
+        }
+    }
+}
+
+// src/Capture.java
+
+import com.digitalpersona.uareu.Reader;
+import com.digitalpersona.uareu.Reader.CaptureQuality;
+import com.digitalpersona.uareu.Fid;
+import com.digitalpersona.uareu.Fid.Fiv;
+import java.util.Base64;
+
+import java.awt.Image;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.IOException;
+
+import javax.imageio.ImageIO;
+import java.awt.Graphics;
+import java.util.logging.Logger;
+import java.util.logging.Level;
+
+public class Capture {
+    private static final Logger logger = Logger.getLogger(Capture.class.getName());
+
+    public static void Run(Reader reader, boolean streaming) {  
+        try {
+            // Define the image processing constant
+            Reader.ImageProcessing imgProc = Reader.ImageProcessing.IMG_PROC_DEFAULT; // Ensure this constant exists in your SDK
+            
+            // Initialize CaptureThread with ActionListener using a lambda expression
+            CaptureThread captureThread = new CaptureThread(reader, streaming, Fid.Format.ANSI_381_2004, imgProc, e -> {
+                CaptureThread.CaptureEvent captureEvent = (CaptureThread.CaptureEvent) e;
+                if (captureEvent.getActionCommand().equals(CaptureThread.ACT_CAPTURE)) {
+                    // Check if a capture result is available
+                    if (captureEvent.capture_result != null && captureEvent.capture_result.image != null) {
+                        BufferedImage capturedImage = convertFidToImage(captureEvent.capture_result.image);
+                        if (capturedImage != null) {
+                            logger.info("Fingerprint captured successfully.");
+                        } else {
+                            logger.warning("Failed to convert Fid to Image.");
+                        }
+
+                        // Check the quality of the capture
+                        if (captureEvent.capture_result.quality == CaptureQuality.GOOD) {
+                            logger.info("Capture quality is good.");
+                        } else {
+                            logger.warning("Capture quality is not optimal: " + captureEvent.capture_result.quality);
+                        }
+
+                        // Convert image to Base64 and send to API
+                        logger.info("CaptureEvent: " + captureEvent.toString());
+                        String base64Image = imageToBase64(capturedImage);
+                        if (base64Image != null) {
+                            boolean apiResult = ApiClient.sendImage(base64Image); // Ensure ApiClient is properly implemented
+                            if (apiResult) {
+                                logger.info("Image successfully sent to the API.");
+                            } else {
+                                logger.warning("Failed to send image to the API.");
+                            }
+                        }
+                    } else if (captureEvent.exception != null) {
+                        // Handle exceptions that occurred during capture
+                        logger.severe("Error capturing fingerprint: " + captureEvent.exception.getMessage());
+                        // Optionally, display reader status
+                        if (captureEvent.reader_status != null) {
+                            logger.severe("Reader Status: " + captureEvent.reader_status.status);
+                        }
+                    }
+                }
+            });
+
+            // Start the capture thread
+            captureThread.start();
+            
+            // Keep the main thread alive while capture is running
+            while (captureThread.isAlive()) {
+                Thread.sleep(100); // Reduced sleep time for better responsiveness
+            }
+
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            logger.log(Level.SEVERE, "Capture thread was interrupted.", e);
+        }
+    }
+
+    // Converts an Image object to a Base64 encoded string
+    private static String imageToBase64(Image image) {
+        if (image == null) {
+            logger.warning("Cannot convert null image to Base64.");
+            return null;
+        }
+        try {
+            BufferedImage bufferedImage = new BufferedImage(image.getWidth(null), image.getHeight(null), BufferedImage.TYPE_INT_RGB);
+            Graphics g = bufferedImage.getGraphics();
+            g.drawImage(image, 0, 0, null);
+            g.dispose();
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            ImageIO.write(bufferedImage, "jpg", baos);
+            byte[] bytes = baos.toByteArray();
+            return Base64.getEncoder().encodeToString(bytes);
+        } catch (IOException e) {
+            logger.log(Level.SEVERE, "Error converting image to Base64: " + e.getMessage(), e);
+            return null;
+        }
+    }
+
+    // Converts a Fid image to a Java AWT Image object
+    private static BufferedImage convertFidToImage(Fid fid) {
+        try {
+            byte[] imageData = fid.getData(); // Get the byte data from Fid
+            logger.info("Image data length: " + imageData.length);
+            
+            // Print the first 10 bytes in hexadecimal for inspection
+            System.out.print("First 10 bytes: ");
+            for (int i = 0; i < Math.min(10, imageData.length); i++) {
+                System.out.printf("%02X ", imageData[i]);
+            }
+            System.out.println();
+            
+            // Determine the image format
+            String format = determineImageFormat(imageData);
+            logger.info("Detected image format: " + format);
+            
+            // Save to file for inspection
+            String fileExtension = format.equals("unknown") ? "bmp" : format;
+            java.nio.file.Files.write(java.nio.file.Paths.get("captured_fingerprint." + fileExtension), imageData);
+            logger.info("Image data saved to captured_fingerprint." + fileExtension);
+            
+            // Read the image
+            ByteArrayInputStream bais = new ByteArrayInputStream(imageData);
+            BufferedImage bufferedImage = ImageIO.read(bais);
+            if (bufferedImage == null) {
+                logger.warning("ImageIO.read() returned null. Attempting manual conversion.");
+                bufferedImage = manualConvertFidToBufferedImage(fid);
+            }
+            return bufferedImage;
+        } catch (IOException e) {
+            logger.log(Level.SEVERE, "Error converting Fid to Image: " + e.getMessage(), e);
+            return null;
+        }
+    }
+    
+    // Determines the image format based on byte signatures
+    private static String determineImageFormat(byte[] imageData) {
+        if (imageData.length > 4) {
+            // BMP signature
+            if (imageData[0] == 'B' && imageData[1] == 'M') {
+                return "bmp";
+            }
+            // PNG signature
+            if (imageData[0] == (byte)137 && imageData[1] == 80 && imageData[2] == 78 && imageData[3] == 71) {
+                return "png";
+            }
+            // JPEG signature
+            if (imageData[0] == (byte)0xFF && imageData[1] == (byte)0xD8 &&
+                imageData[imageData.length - 2] == (byte)0xFF &&
+                imageData[imageData.length - 1] == (byte)0xD9) {
+                return "jpg";
+            }
+        }
+        return "unknown";
+    }
+    
+    // Manual conversion if ImageIO fails
+    private static BufferedImage manualConvertFidToBufferedImage(Fid fid) {
+        try {
+            Fiv view = fid.getViews()[0];
+            byte[] imageData = view.getImageData();
+            int width = view.getWidth();
+            int height = view.getHeight();
+            logger.info("Manual Conversion - Width: " + width + ", Height: " + height);
+            
+            BufferedImage bufferedImage = new BufferedImage(width, height, BufferedImage.TYPE_BYTE_GRAY);
+            bufferedImage.getRaster().setDataElements(0, 0, width, height, imageData);
+            
+            // Save as PNG for verification
+            ImageIO.write(bufferedImage, "png", new File("fingerprint_manual.png"));
+            logger.info("Manually converted image saved as fingerprint_manual.png");
+            return bufferedImage;
+        } catch (Exception e) {
+            logger.log(Level.SEVERE, "Error during manual conversion: " + e.getMessage(), e);
+            return null;
+        }
+    }
+}
+
+import java.awt.Graphics;
+import java.awt.image.BufferedImage;
+import javax.swing.JPanel;
+import com.digitalpersona.uareu.Fid;
+import com.digitalpersona.uareu.Fid.Fiv;
+
+public class ImagePanel extends JPanel {
+    private static final long serialVersionUID = 5;
+    private BufferedImage m_image;
+
+    // Method to display the image
+    public void showImage(Fid image) {
+        Fiv view = image.getViews()[0];
+        m_image = new BufferedImage(view.getWidth(), view.getHeight(), BufferedImage.TYPE_BYTE_GRAY);
+
+        // Fill the buffered image with fingerprint data
+        m_image.getRaster().setDataElements(0, 0, view.getWidth(), view.getHeight(), view.getImageData());
+
+        repaint(); // Repaint to display the new image
+    }
+
+    @Override
+    protected void paintComponent(Graphics g) {
+        super.paintComponent(g);
+        if (m_image != null) {
+            g.drawImage(m_image, 0, 0, this.getWidth(), this.getHeight(), null); // Scale the image to fit the panel
+        }
+    }
+}
+
+import java.awt.event.ActionEvent;
+import java.awt.event.ActionListener;
+
+import com.digitalpersona.uareu.*;
+
+public class CaptureThread extends Thread 
+{
+	public static final String ACT_CAPTURE = "capture_thread_captured";
+	
+	public class CaptureEvent extends ActionEvent{
+		private static final long serialVersionUID = 101;
+
+		public Reader.CaptureResult capture_result;
+		public Reader.Status        reader_status;
+		public UareUException       exception;
+		
+		public CaptureEvent(Object source, String action, Reader.CaptureResult cr, Reader.Status st, UareUException ex){
+			super(source, ActionEvent.ACTION_PERFORMED, action);
+			capture_result = cr;
+			reader_status = st;
+			exception = ex;
+		}
+	}
+	
+	private ActionListener m_listener;
+	private boolean m_bCancel;
+	private Reader  m_reader;
+	private boolean m_bStream;
+	private Fid.Format             m_format;
+	private Reader.ImageProcessing m_proc;
+	private CaptureEvent m_last_capture;
+	
+	public CaptureThread(Reader reader, boolean bStream, Fid.Format img_format, Reader.ImageProcessing img_proc){
+		m_bCancel = false;
+		m_reader = reader;
+		m_bStream = bStream;
+		m_format = img_format;
+		m_proc = img_proc;
+	}
+	
+	public void start(ActionListener listener){
+		m_listener = listener;
+		super.start();
+	}
+	
+	public void join(int milliseconds){
+		try{
+			super.join(milliseconds);
+		} 
+		catch(InterruptedException e){ e.printStackTrace(); }
+	}
+	
+	public CaptureEvent getLastCaptureEvent(){
+		return m_last_capture;
+	}
+	
+	private void Capture(){
+		synchronized(this){
+			try{
+				//wait for reader to become ready
+				boolean bReady = false;
+				while(!bReady && !m_bCancel){
+					Reader.Status rs = m_reader.GetStatus();
+					if(Reader.ReaderStatus.BUSY == rs.status){
+						//if busy, wait a bit
+						try{
+							Thread.sleep(100);
+						} 
+						catch(InterruptedException e) {
+							e.printStackTrace();
+							break; 
+						}
+					}
+					else if(Reader.ReaderStatus.READY == rs.status || Reader.ReaderStatus.NEED_CALIBRATION == rs.status){
+						//ready for capture
+						bReady = true;
+						break;
+					}
+					else{
+						//reader failure
+						NotifyListener(ACT_CAPTURE, null, rs, null);
+						break;
+					}
+				}
+				if(m_bCancel){
+					Reader.CaptureResult cr = new Reader.CaptureResult();
+					cr.quality = Reader.CaptureQuality.CANCELED;
+					NotifyListener(ACT_CAPTURE, cr, null, null);
+				}
+	
+				
+				if(bReady){
+					//capture
+					Reader.CaptureResult cr = m_reader.Capture(m_format, m_proc, m_reader.GetCapabilities().resolutions[0], -1);
+					NotifyListener(ACT_CAPTURE, cr, null, null);
+				}
+			}
+			catch(UareUException e){
+				NotifyListener(ACT_CAPTURE, null, null, e);
+			}
+		}
+	}
+	
+	private void Stream(){
+		try{
+			//wait for reader to become ready
+			boolean bReady = false;
+			while(!bReady && !m_bCancel){
+				Reader.Status rs = m_reader.GetStatus();
+				if(Reader.ReaderStatus.BUSY == rs.status){
+					//if busy, wait a bit
+					try{
+						Thread.sleep(100);
+					} 
+					catch(InterruptedException e) {
+						e.printStackTrace();
+						break; 
+					}
+				}
+				else if(Reader.ReaderStatus.READY == rs.status || Reader.ReaderStatus.NEED_CALIBRATION == rs.status){
+					//ready for capture
+					bReady = true;
+					break;
+				}
+				else{
+					//reader failure
+					NotifyListener(ACT_CAPTURE, null, rs, null);
+					break;
+				}
+			}
+				
+			if(bReady){
+				//start streaming
+				m_reader.StartStreaming();
+		
+				//get images
+				while(!m_bCancel){
+					Reader.CaptureResult cr = m_reader.GetStreamImage(m_format, m_proc, 500);
+					NotifyListener(ACT_CAPTURE, cr, null, null);
+				}
+					
+				//stop streaming
+				m_reader.StopStreaming();
+			}
+		}
+		catch(UareUException e){
+			NotifyListener(ACT_CAPTURE, null, null, e);
+		}
+	
+		if(m_bCancel){
+			Reader.CaptureResult cr = new Reader.CaptureResult();
+			cr.quality = Reader.CaptureQuality.CANCELED;
+			NotifyListener(ACT_CAPTURE, cr, null, null);
+		}
+	}
+	
+	private void NotifyListener(String action, Reader.CaptureResult cr, Reader.Status st, UareUException ex){
+		final CaptureEvent evt = new CaptureEvent(this, action, cr, st, ex);
+		
+		//store last capture event
+		m_last_capture = evt; 
+
+		if(null == m_listener || null == action || action.equals("")) return;
+		
+		//invoke listener on EDT thread
+		javax.swing.SwingUtilities.invokeLater(new Runnable() {
+			public void run() {
+				m_listener.actionPerformed(evt);
+			}
+		});
+	}
+	
+	public void cancel(){
+		m_bCancel = true;
+		try{
+			if(!m_bStream) m_reader.CancelCapture();
+		}
+		catch(UareUException e){}
+	} 
+	
+	public void run(){
+		if(m_bStream){
+			Stream();
+		}
+		else{
+			Capture();
+		}
+	}
+}
