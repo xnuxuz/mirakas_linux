@@ -1,4 +1,23 @@
-# Makefile for DigitalPersona Java Sample with API Integration
+# Detect OS
+ifeq ($(OS),Windows_NT)
+    PLATFORM = windows
+    LIB_PATH = .\lib\native\windows
+    PATH_SEPARATOR = ;
+    CLASSPATH_SEPARATOR = ;
+    EXE_SUFFIX = .exe
+else
+    UNAME_S := $(shell uname -s)
+    ifeq ($(UNAME_S),Linux)
+        PLATFORM = linux
+    endif
+    ifeq ($(UNAME_S),Darwin)
+        PLATFORM = mac
+    endif
+    LIB_PATH = ./lib/native/$(PLATFORM)
+    PATH_SEPARATOR = :
+    CLASSPATH_SEPARATOR = :
+    EXE_SUFFIX =
+endif
 
 # Directories
 LIB_DIR = ./lib/java
@@ -11,7 +30,7 @@ CODEC_JAR = commons-codec-1.15.jar
 JSON_JAR = json-20230618.jar
 
 # Classpath
-CLASSPATH = $(LIB_DIR)/$(DPJAR):$(LIB_DIR)/$(CODEC_JAR):$(LIB_DIR)/$(JSON_JAR)
+CLASSPATH = $(LIB_DIR)/$(DPJAR)$(CLASSPATH_SEPARATOR)$(LIB_DIR)/$(CODEC_JAR)$(CLASSPATH_SEPARATOR)$(LIB_DIR)/$(JSON_JAR)
 
 # Main Class
 MAIN_CLASS = Main
@@ -27,8 +46,8 @@ $(BIN_DIR):
 	mkdir -p $(BIN_DIR)
 
 Mirakas.jar: $(BIN_DIR) $(SRC_DIR)/*.java manifest.txt
-	javac -source $(JAVA_VERSION) -target $(JAVA_VERSION) -classpath $(CLASSPATH) -d $(BIN_DIR) $(SRC_DIR)/*.java
-	jar -cvfm Mirakas.jar manifest.txt -C $(BIN_DIR) .
+	javac -source $(JAVA_VERSION) -target $(JAVA_VERSION) -classpath "$(CLASSPATH)" -d "$(BIN_DIR)" $(SRC_DIR)/*.java
+	jar -cvfm Mirakas.jar manifest.txt -C "$(BIN_DIR)" .
 
 clean:
 	rm -rf $(BIN_DIR)
@@ -36,4 +55,8 @@ clean:
 	rm -rf ./fingerprints
 
 run:
-	LD_LIBRARY_PATH=./lib/x64 java -cp "Mirakas.jar:./lib/java/*" Main
+ifeq ($(OS),Windows_NT)
+	set PATH=%PATH%;$(LIB_PATH) && java -cp "Mirakas.jar;$(LIB_DIR)\*" $(MAIN_CLASS)
+else
+	export LD_LIBRARY_PATH=$(LIB_PATH):$$LD_LIBRARY_PATH && java -cp "Mirakas.jar:$(LIB_DIR)/*" $(MAIN_CLASS)
+endif
