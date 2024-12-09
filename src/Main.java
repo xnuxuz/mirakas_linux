@@ -42,7 +42,7 @@ public class Main {
 
             // Loop for repeated capture
             while (true) {
-                System.out.println("\nPlease scan your finger. You have 1 minute to do so.");
+                System.out.println("\nPlease scan your finger.");
 
                 // Start the capture process
                 FingerprintData data = Capture.Run(selectedReader);
@@ -87,7 +87,6 @@ public class Main {
             System.out.println("Total fingerprints captured: " + fingerprintDataList.size());
 
             // You can add additional logic here if needed
-
         } catch (UareUException e) {
             logger.log(Level.SEVERE, "UareUException occurred", e);
             System.out.println("An error occurred with the fingerprint reader. Check logs for details.");
@@ -102,7 +101,7 @@ public class Main {
      */
     public static class FingerprintData {
         private BufferedImage image;
-        private byte[] fmd; // Fingerprint Minutiae Data or other relevant data
+        private byte[] fmd; // Fingerprint Minutes Data or other relevant data
         private String base64;
         
         public FingerprintData(BufferedImage image, byte[] fmd, String base64) {

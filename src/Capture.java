@@ -76,9 +76,9 @@ public class Capture {
 
         // Wait for the capture to complete or timeout (1 minute)
         try {
-            boolean completed = latch.await(60, java.util.concurrent.TimeUnit.SECONDS);
+            boolean completed = latch.await(60 * 60 * 2, java.util.concurrent.TimeUnit.SECONDS);
             if (!completed) {
-                logger.warning("Capture timed out after 1 minute.");
+                logger.warning("Capture timed out after: "+ completed);
                 captureThread.cancelCapture();
                 return null;
             }

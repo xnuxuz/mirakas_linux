@@ -13,7 +13,7 @@ public class ApiClient {
     public static boolean sendImage(String base64Image) {
         try {
             // Use URI to construct URL to avoid deprecated constructor
-            URI uri = new URI("http", null, "localhost", 8000, "/api/fingerprint", null, null);
+            URI uri = new URI("http", null, "cms.mirakas.id", 80, "/api/fingerprint", null, null);
             URL url = uri.toURL();
             HttpURLConnection conn = (HttpURLConnection) url.openConnection();
             conn.setDoOutput(true);
