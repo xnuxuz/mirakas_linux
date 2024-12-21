@@ -56,11 +56,11 @@ public class ApiClient {
             conn.setRequestProperty("Content-Type", "application/json");
 
             // Create JSON payload
-            String jsonInputString = "{\"image\":\"" + base64Image + "email:"+ email +"\"}";
-            
+            String jsonInputString = "{\"image\":\"" + base64Image +"\",\"email\":\"" + email +"\"}";
+            // System.out.println(jsonInputString);
             try(OutputStream os = conn.getOutputStream()) {
                 byte[] input = jsonInputString.getBytes("utf-8");
-                os.write(input, 0, input.length);           
+                os.write(input, 0, input.length);
             }
 
             // System.out.println(conn.getResponseMessage());
