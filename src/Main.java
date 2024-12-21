@@ -13,86 +13,102 @@ import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.IOException;
 import javax.imageio.ImageIO;
-
+import java.util.Scanner;
 /**
  * Main class for the Fingerprint Capture Application.
  */
 public class Main {
     private static final Logger logger = Logger.getLogger(Main.class.getName());
     private static Reader selectedReader;
-
     // List to store captured fingerprint data
     public static final List<FingerprintData> fingerprintDataList = new ArrayList<>();
 
     public static void main(String[] args) {
-        try {
-            // Initialize the UareU SDK
-            ReaderCollection readers = UareUGlobal.GetReaderCollection();
-            readers.GetReaders();
-
-            if (readers.size() == 0) {
-                logger.warning("No fingerprint readers found.");
-                System.out.println("No fingerprint readers detected. Exiting application.");
-                return;
-            }
-
-            selectedReader = readers.get(0);
-            selectedReader.Open(Reader.Priority.EXCLUSIVE);
-            System.out.println("Fingerprint reader opened successfully.");
-
-            // Loop for repeated capture
-            while (true) {
-                System.out.println("\nPlease scan your finger.");
-
-                // Start the capture process
-                FingerprintData data = Capture.Run(selectedReader);
-
-                if (data != null && data.getImage() != null) {
-                    fingerprintDataList.add(data);
-                    // System.out.println("Fingerprint captured successfully.");
-
-                    // Save the captured fingerprint image
-                    String fingerName = "Captured_Finger_" + (fingerprintDataList.size());
-                    String fileName = fingerName + ".png"; // Example: Captured_Finger_1.png
-                    File outputFile = new File("fingerprints/" + fileName);
-                    try {
-                        // Ensure the directory exists
-                        outputFile.getParentFile().mkdirs();
-                        ImageIO.write(data.getImage(), "png", outputFile);
-                        System.out.println(fingerName + " saved to " + outputFile.getAbsolutePath());
-                        boolean ApiResponse = ApiClient.sendImage(data.base64());
-                        if(ApiResponse){
-                            logger.info("Image successfully sent to the API.");
-                        }else{
-                            logger.warning("Failed to send image to the API.");
-                        }
-                    } catch (IOException e) {
-                        logger.log(Level.SEVERE, "Error saving image for " + fingerName, e);
-                    }
-
-                    // You can add additional logic here if needed
-                } else {
-                    System.out.println("No fingerprint scanned within 1 minute. Closing the reader.");
-                    logger.warning("Capture failed or timed out.");
-                    break; // Exit the loop
+        try (Scanner scanner = new Scanner(System.in)) {
+            String email;
+            int statusEmail;
+            do {
+                System.out.print("Email : ");
+                email = scanner.nextLine();
+                statusEmail = ApiClient.validateEmail(email);
+    
+                if (statusEmail == 403) {
+                    System.out.println("Email tidak tersedia. Silahkan coba lagi.");
                 }
+            } while (statusEmail != 200);
+            System.out.println("Sukses Verifikasi...");
+            try {
+                // Initialize the UareU SDK
+                ReaderCollection readers = UareUGlobal.GetReaderCollection();
+                readers.GetReaders();
+    
+                if (readers.size() == 0) {
+                    logger.warning("No fingerprint readers found.");
+                    System.out.println("No fingerprint readers detected. Exiting application.");
+                    return;
+                }
+    
+                selectedReader = readers.get(0);
+                selectedReader.Open(Reader.Priority.EXCLUSIVE);
+                System.out.println("Fingerprint reader opened successfully.");
+    
+                // Loop for repeated capture
+                while (true) {
+                    System.out.println("\nPlease scan your finger.");
+    
+                    // Start the capture process
+                    FingerprintData data = Capture.Run(selectedReader);
+    
+                    if (data != null && data.getImage() != null) {
+                        fingerprintDataList.add(data);
+                        // System.out.println("Fingerprint captured successfully.");
+    
+                        // Save the captured fingerprint image
+                        String fingerName = "Captured_Finger_" + (fingerprintDataList.size());
+                        String fileName = fingerName + ".png"; // Example: Captured_Finger_1.png
+                        File outputFile = new File("fingerprints/" + fileName);
+                        try {
+                            // Ensure the directory exists
+                            outputFile.getParentFile().mkdirs();
+                            ImageIO.write(data.getImage(), "png", outputFile);
+                            System.out.println(fingerName + " saved to " + outputFile.getAbsolutePath());
+                            boolean ApiResponse = ApiClient.sendImage(data.base64(), email);
+                            if(ApiResponse){
+                                logger.info("Image successfully sent to the API.");
+                            }else{
+                                logger.warning("Failed to send image to the API.");
+                            }
+                        } catch (IOException e) {
+                            logger.log(Level.SEVERE, "Error saving image for " + fingerName, e);
+                        }
+    
+                        // You can add additional logic here if needed
+                    } else {
+                        System.out.println("No fingerprint scanned within 1 minute. Closing the reader.");
+                        logger.warning("Capture failed or timed out.");
+                        break; // Exit the loop
+                    }
+                }
+    
+                // Close the reader after the capture process is complete
+                selectedReader.Close();
+                System.out.println("Fingerprint reader closed.");
+    
+                // Summary of captures
+                System.out.println("\nFingerprint capture process completed.");
+                System.out.println("Total fingerprints captured: " + fingerprintDataList.size());
+    
+                // You can add additional logic here if needed
+            } catch (UareUException e) {
+                logger.log(Level.SEVERE, "UareUException occurred", e);
+                System.out.println("An error occurred with the fingerprint reader. Check logs for details.");
+            } catch (Exception e) {
+                logger.log(Level.SEVERE, "An unexpected error occurred", e);
+                System.out.println("An unexpected error occurred. Check logs for details.");
             }
-
-            // Close the reader after the capture process is complete
-            selectedReader.Close();
-            System.out.println("Fingerprint reader closed.");
-
-            // Summary of captures
-            System.out.println("\nFingerprint capture process completed.");
-            System.out.println("Total fingerprints captured: " + fingerprintDataList.size());
-
-            // You can add additional logic here if needed
-        } catch (UareUException e) {
-            logger.log(Level.SEVERE, "UareUException occurred", e);
-            System.out.println("An error occurred with the fingerprint reader. Check logs for details.");
         } catch (Exception e) {
-            logger.log(Level.SEVERE, "An unexpected error occurred", e);
-            System.out.println("An unexpected error occurred. Check logs for details.");
+            System.out.println("Terjadi kesalahan: " + e.getMessage());
+            e.printStackTrace();
         }
     }
 
